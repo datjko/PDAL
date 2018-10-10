@@ -196,7 +196,10 @@ private:
 class PDAL_DLL StreamPointTable : public SimplePointTable
 {
 protected:
-    StreamPointTable(PointLayout& layout) : SimplePointTable(layout)
+    StreamPointTable(PointLayout& layout, point_count_t capacity)
+        : SimplePointTable(layout)
+        , m_capacity(capacity)
+        , m_skips(m_capacity, false)
     {}
 
 public:
@@ -208,23 +211,37 @@ public:
     /// when all dimensions are known.
     virtual void finalize()
     {}
-    /// Called before the StreamPointTable is reset indicating the number of
-    /// points that were populated, which must be less than or equal to its
-    /// capacity.
-    virtual void setNumPoints(PointId n)
-    {}
+
+    void reset(point_count_t count)
+    {
+        doReset(count);
+        std::fill(m_skips.begin(), m_skips.end(), false);
+    }
+
+    void setSkip(PointId n)
+        { m_skips[n] = true; }
+    bool skip(PointId n) const
+        { return m_skips[n]; }
+    point_count_t capacity() const
+        { return m_capacity; }
+
+protected:
     /// Called when the contents of StreamPointTable have been consumed and
-    /// the point data will be potentially overwritten.
-    virtual void reset()
+    /// the point data will be potentially overwritten.  The count represents
+    /// the number of points populated, which shall be less than or equal to
+    /// the capacity of this table.
+    virtual void doReset(point_count_t count)
     {}
-    virtual point_count_t capacity() const = 0;
+
+    point_count_t m_capacity;
+    std::vector<bool> m_skips;
 };
 
 class PDAL_DLL FixedPointTable : public StreamPointTable
 {
 public:
-    FixedPointTable(point_count_t capacity) : StreamPointTable(m_layout),
-        m_capacity(capacity)
+    FixedPointTable(point_count_t capacity)
+        : StreamPointTable(m_layout, capacity)
     {}
 
     virtual void finalize()
@@ -236,18 +253,15 @@ public:
         }
     }
 
-    virtual void reset()
+    virtual void doReset(point_count_t)
         { std::fill(m_buf.begin(), m_buf.end(), 0); }
 
-    point_count_t capacity() const
-        { return m_capacity; }
 protected:
     virtual char *getPoint(PointId idx)
         { return m_buf.data() + pointsToBytes(idx); }
 
 private:
     std::vector<char> m_buf;
-    point_count_t m_capacity;
     PointLayout m_layout;
 };
 
